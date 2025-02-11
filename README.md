@@ -71,8 +71,8 @@ Enfoque de aprendizaje automático para la detección temprana de deserción est
 - A biharmonic equation with discontinuous nonlinearities. *Eduardo Arias, Marco Calahorrano, Alfonso Castro. Electron. J. Differential Equations, 2024*
 
 ## Contacto
-- LinkedIn: [Perfil](tu-url-linkedin)
-- Correo: tu.correo@ejemplo.com
+- LinkedIn: [Perfil](https://www.linkedin.com/in/eduardo-arias-3e0/)
+- Correo: mat.eduardo.arias@outlook.com
 
 ## Licencia
 Este proyecto está bajo la Licencia MIT - ver el archivo [LICENSE](LICENSE) para más detalles.
