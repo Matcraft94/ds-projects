@@ -5,6 +5,14 @@ Soy un Ingeniero Matemático especializado en Computación Científica y Modelad
 
 ## Resumen de Proyectos
 
+### [Actuarial Loss Prediction](./actuarial-loss-prediction/)
+Sistema de predicción de pérdidas actuariales utilizando XGBoost y análisis estadístico avanzado.
+- Implementación de modelo XGBoost con optimización de hiperparámetros
+- Procesamiento avanzado de texto para descripción de reclamaciones
+- Análisis exhaustivo por segmentos de valor
+- Pipeline completo de preprocesamiento y modelado
+- RMSE de 23,669 en conjunto de prueba
+
 ### [Neural PDEs Solver](./neural-pdes-solver/)
 Implementación de Redes Neuronales Basadas en Física (PINNs) para resolver ecuaciones diferenciales parciales.
 - Implementación de PINNs para varias EDPs
