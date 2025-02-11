@@ -14,11 +14,12 @@ Sistema de predicción de pérdidas actuariales utilizando XGBoost y análisis e
 - RMSE de 23,669 en conjunto de prueba
 
 ### [Neural PDEs Solver](./neural-pdes-solver/)
-Implementación de Redes Neuronales Basadas en Física (PINNs) para resolver ecuaciones diferenciales parciales.
-- Implementación de PINNs para varias EDPs
-- Comparación con métodos numéricos tradicionales
-- Demostración de aplicaciones en ingeniería
-- Análisis de rendimiento y visualización
+Implementación de Redes Neuronales Basadas en Física (PINNs) para resolver ecuaciones diferenciales parciales directas e inversas.
+- Solución del sistema de péndulo doble con descomposición de dominio y conservación de energía (MSE < 1e-3)
+- Implementación de métodos NLLSQ y VarPro para problemas inversos de PDEs con análisis comparativo
+- Sistema de manejo de memoria GPU para optimización de rendimiento
+- Arquitectura de red con bloques residuales y activaciones adaptativas
+- Visualización avanzada de soluciones y análisis de error mediante contornos y distribuciones
 
 ### [Market Risk Analysis Platform](./market-risk-analysis/) (En implementacion)
 Plataforma integral para evaluación de riesgos de mercado utilizando técnicas de aprendizaje automático.
