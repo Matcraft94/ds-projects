@@ -19,7 +19,7 @@ def main():
     df_300, df_500, df_500_2 = load_excel_files()
     
     date_cols = ['date', 'time']
-    df_500 = df_500.drop(columns=date_cols)
+    df_500 = df_300.drop(columns=date_cols)
     
     data_processor = MarketDataProcessor(window_size=60)
     
