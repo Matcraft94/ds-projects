@@ -21,12 +21,13 @@ Implementación de Redes Neuronales Basadas en Física (PINNs) para resolver ecu
 - Arquitectura de red con bloques residuales y activaciones adaptativas
 - Visualización avanzada de soluciones y análisis de error mediante contornos y distribuciones
 
-### [Market Risk Analysis Platform](./market-risk-analysis/) (En implementacion)
+### [Market Risk Analysis Platform](./market-risk-analysis/)
 Plataforma integral para evaluación de riesgos de mercado utilizando técnicas de aprendizaje automático.
-- Predicción de volatilidad mediante redes neuronales
-- Backtesting de estrategias de trading
-- Integración con APIs financieras
-- Dashboards interactivos
+- Modelo de red neuronal para predicción de volatilidad con pérdida final de entrenamiento de 0.0608 y prueba de 0.0628
+- Sistema de backtesting con métricas clave: retorno total (-14.70%), ratio de Sharpe (-1.4005), drawdown máximo (-14.76%)
+- Tasa de éxito en operaciones del 43.78% (por mejorar)
+- Preprocesamiento robusto con reducción de dimensionalidad (11,623 → 10,607 muestras)
+- Pipeline completo de entrenamiento con convergencia en 10 épocas
 
 ### [Educational Assessment ML Pipeline](./educational-assessment/)
 Sistema automatizado para análisis de datos educativos y predicción del rendimiento estudiantil.
