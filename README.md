@@ -22,12 +22,18 @@ Implementación de Redes Neuronales Basadas en Física (PINNs) para resolver ecu
 - Visualización avanzada de soluciones y análisis de error mediante contornos y distribuciones
 
 ### [Market Risk Analysis Platform](./market-risk-analysis/)
-Plataforma integral para evaluación de riesgos de mercado utilizando técnicas de aprendizaje automático.
-- Modelo de red neuronal para predicción de volatilidad con pérdida final de entrenamiento de 0.0608 y prueba de 0.0628
-- Sistema de backtesting con métricas clave: retorno total (-14.70%), ratio de Sharpe (-1.4005), drawdown máximo (-14.76%)
-- Tasa de éxito en operaciones del 43.78% (por mejorar)
-- Preprocesamiento robusto con reducción de dimensionalidad (11,623 → 10,607 muestras)
-- Pipeline completo de entrenamiento con convergencia en 10 épocas
+Plataforma integral para evaluación de riesgos de mercado utilizando técnicas de aprendizaje automático y redes neuronales LSTM.
+- **Desempeño del Modelo**:
+  - Crash 300: Loss de entrenamiento 0.1250 → 0.0833 (validación final)
+  - Crash 500: Loss de entrenamiento 0.0473 → 0.0388 (validación final)
+  - Media de validation loss: 0.3201 ± 0.2505 (Crash 300) y 0.1763 ± 0.2162 (Crash 500)
+- **Métricas de Trading**:
+  - Crash 300: Retorno total -14.70%, Ratio de Sharpe -1.4005, Drawdown máximo -14.76%
+  - Crash 500: Retorno total -17.63%, Ratio de Sharpe -2.0967, Drawdown máximo -17.68%
+- **Eficiencia del Pipeline**:
+  - Preprocesamiento robusto: reducción de ruido (11,623 → 10,607 muestras en Crash 300)
+  - Convergencia en 10 épocas con early stopping
+  - Tasa de éxito en operaciones: 43.78% (Crash 300) y 42.62% (Crash 500)
 
 ### [Educational Assessment ML Pipeline](./educational-assessment/)
 Sistema automatizado para análisis de datos educativos y predicción del rendimiento estudiantil.
