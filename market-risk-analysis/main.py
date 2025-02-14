@@ -1,4 +1,5 @@
 # Creado por: Lucy
+import os
 import pandas as pd
 import torch
 import numpy as np
@@ -11,9 +12,11 @@ from src.visualization import MarketVisualizer
 from torch.utils.data import DataLoader
 
 def load_excel_files():
-    df_300 = pd.read_excel('data/raw/crash300.xlsx')
-    df_500 = pd.read_excel('data/raw/crash500.xlsx')
-    df_500_2 = pd.read_excel('data/raw/crash500_2.xlsx')
+    current_file = os.path.abspath(__file__)
+    project_dir = os.path.dirname(current_file)
+    df_300 = pd.read_excel(os.path.join(project_dir, 'data/raw/crash300.xlsx'))
+    df_500 = pd.read_excel(os.path.join(project_dir, 'data/raw/crash500.xlsx'))
+    df_500_2 = pd.read_excel(os.path.join(project_dir, 'data/raw/crash500_2.xlsx'))
     return df_300, df_500, df_500_2
 
 def main():
@@ -21,7 +24,7 @@ def main():
     df_300, df_500, df_500_2 = load_excel_files()
     
     date_cols = ['date', 'time']
-    df_500 = df_300.drop(columns=date_cols)
+    df_500 = df_500.drop(columns=date_cols)
     
     data_processor = MarketDataProcessor(window_size=60)
     processed_300 = data_processor.load_data(df_500)
