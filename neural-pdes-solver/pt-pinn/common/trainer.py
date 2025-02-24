@@ -223,7 +223,8 @@ class PINNTrainer:
             'residual_loss': [],
             'l2_relative': [],
             'l1_absolute': [],
-            'linf_absolute': []
+            'linf_absolute': [],
+            'eval_steps': []
         }
         
         # Phase 1: Adam optimization with resampling
@@ -275,10 +276,15 @@ class PINNTrainer:
         optimizer_lbfgs.step(closure)
         
         # Final evaluation
-        if x_test is not None and y_test is not None:
-            final_metrics = self.evaluate(x_test, y_test)
-            for key, value in final_metrics.items():
+        # if x_test is not None and y_test is not None:
+        #     final_metrics = self.evaluate(x_test, y_test)
+        #     for key, value in final_metrics.items():
+        #         history[key].append(value)
+        if x_test is not None and y_test is not None and step % self.config.eval_frequency == 0:
+            metrics = self.evaluate(x_test, y_test)
+            for key, value in metrics.items():
                 history[key].append(value)
+            history['eval_steps'].append(step)  # Add current step
         
         print("Training completed!")
         return history
