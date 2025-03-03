@@ -1,0 +1,5 @@
+Modelo | Error L2 Relativo | Error L1 Absoluto | Error Linf Absoluto
+----------------------------------------------------------------------
+PINN Estándar | 0.405721 | 0.043306 | 0.252884
+PT-PINN (1-int) | 0.651485 | 0.079208 | 0.439600
+PT-PINN (2-int) | 2.000576 | 0.219676 | 1.173166

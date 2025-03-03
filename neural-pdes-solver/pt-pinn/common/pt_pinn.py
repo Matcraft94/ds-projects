@@ -115,22 +115,21 @@ class PT_PINN(BasePINN):
         optimizer.zero_grad()
         
         # Forward pass and loss computation
-        with torch.set_grad_enabled(True):
-            total_loss, loss_components = self.model.loss(
-                x_initial, initial_condition,
-                x_boundary, boundary_condition,
-                x_residual, pde_operator
-            )
+        total_loss, loss_components = self.loss(
+            x_initial, initial_condition,
+            x_boundary, boundary_condition,
+            x_residual, pde_operator
+        )
             
-            # Add supervised loss if provided
-            if x_supervised is not None and y_supervised is not None:
-                supervised_loss = self.model.compute_supervised_loss(x_supervised, y_supervised)
-                total_loss += supervised_loss
-                loss_components['supervised'] = supervised_loss.item()
-            
-            # Backward pass
-            total_loss.backward(retain_graph=True)
-            optimizer.step()
+        # Add supervised loss if provided
+        if x_supervised is not None and y_supervised is not None:
+            supervised_loss = self.compute_supervised_loss(x_supervised, y_supervised)
+            total_loss += self.pt_config.supervised_weight * supervised_loss
+            loss_components['supervised'] = supervised_loss.item()
+        
+        # Backward pass con retain_graph=True para evitar errores de backward múltiple
+        total_loss.backward(retain_graph=True)
+        optimizer.step()
         
         return loss_components
 
@@ -161,14 +160,14 @@ class PT_PINN(BasePINN):
         return x_residual
 
     def train_interval(self,
-                      x_initial: torch.Tensor,
-                      initial_condition: torch.Tensor,
-                      x_boundary: torch.Tensor,
-                      boundary_condition: torch.Tensor,
-                      x_residual: torch.Tensor,
-                      pde_operator: Callable,
-                      x_supervised: Optional[torch.Tensor] = None,
-                      y_supervised: Optional[torch.Tensor] = None) -> Dict[str, float]:
+                    x_initial: torch.Tensor,
+                    initial_condition: torch.Tensor,
+                    x_boundary: torch.Tensor,
+                    boundary_condition: torch.Tensor,
+                    x_residual: torch.Tensor,
+                    pde_operator: Callable,
+                    x_supervised: Optional[torch.Tensor] = None,
+                    y_supervised: Optional[torch.Tensor] = None) -> Dict[str, float]:
         """
         Train the model for one interval using Adam and L-BFGS optimizers
         """
@@ -179,42 +178,78 @@ class PT_PINN(BasePINN):
             # Resample residual points
             x_residual = self.resample_residual_points(x_residual, step)
             
-            loss_components = self.train_step(
+            # Modificar la llamada al método train_step para asegurar correcta implementación
+            optimizer_adam.zero_grad()
+            
+            # Forward pass and loss computation
+            total_loss, loss_components = self.loss(
                 x_initial, initial_condition,
                 x_boundary, boundary_condition,
-                x_residual, pde_operator,
-                optimizer_adam,
-                x_supervised, y_supervised
+                x_residual, pde_operator
             )
+                
+            # Add supervised loss if provided
+            if x_supervised is not None and y_supervised is not None:
+                supervised_loss = self.compute_supervised_loss(x_supervised, y_supervised)
+                total_loss += self.pt_config.supervised_weight * supervised_loss
+                loss_components['supervised'] = supervised_loss.item()
+                
+            # Backward pass con retain_graph=True
+            total_loss.backward(retain_graph=True)
+            optimizer_adam.step()
             
         # Second phase: L-BFGS optimization
         optimizer_lbfgs = optim.LBFGS(self.parameters(),
-                                     max_iter=self.pt_config.lbfgs_iterations)
+                                    max_iter=self.pt_config.lbfgs_iterations,
+                                    line_search_fn="strong_wolfe")
+        
+        # Crear una nueva variable para uso posterior
+        final_components = None
         
         def closure():
+            nonlocal final_components
             optimizer_lbfgs.zero_grad()
             loss, components = self.loss(
                 x_initial, initial_condition,
                 x_boundary, boundary_condition,
                 x_residual, pde_operator
             )
+            
             if x_supervised is not None and y_supervised is not None:
                 supervised_loss = self.compute_supervised_loss(x_supervised, y_supervised)
                 loss += self.pt_config.supervised_weight * supervised_loss
-            loss.backward()
-            return loss
+                components['supervised'] = supervised_loss.item()
             
-        optimizer_lbfgs.step(closure)
+            # Guardar los componentes para uso posterior
+            final_components = components
+            
+            # Usar retain_graph=True explícitamente para evitar el error
+            loss.backward(retain_graph=True)
+            return loss
         
-        # Return final loss components
+        # Ejecutar el optimizador LBFGS con la función de closure
+        try:
+            optimizer_lbfgs.step(closure)
+        except RuntimeError as e:
+            print(f"Error durante la optimización LBFGS: {e}")
+            print("Continuando con los resultados del optimizador Adam...")
+        
+        # Return final loss components (sin necesidad de recalcular para evitar errores)
+        if final_components is not None:
+            return final_components
+        
+        # Si final_components es None, calcular una última vez sin backward
         with torch.no_grad():
-            return self.train_step(
+            _, final_components = self.loss(
                 x_initial, initial_condition,
                 x_boundary, boundary_condition,
-                x_residual, pde_operator,
-                optimizer_lbfgs,
-                x_supervised, y_supervised
+                x_residual, pde_operator
             )
+            if x_supervised is not None and y_supervised is not None:
+                supervised_loss = self.compute_supervised_loss(x_supervised, y_supervised)
+                final_components['supervised'] = supervised_loss.item()
+        
+        return final_components
 
     def pretrain(self,
                 x_initial: torch.Tensor,
@@ -255,17 +290,64 @@ class PT_PINN(BasePINN):
             self.pretrained_models.append(deepcopy(self))
             print(f"Interval {interval_idx + 1} losses:", losses)
 
+    # def train(self,
+    #           x_initial: torch.Tensor,
+    #           initial_condition: torch.Tensor,
+    #           x_boundary: torch.Tensor,
+    #           boundary_condition: torch.Tensor,
+    #           x_residual: torch.Tensor,
+    #           pde_operator: Callable) -> Dict[str, float]:
+    #     """
+    #     Complete training process following Algorithm 2:
+    #     1. Pre-training on multiple intervals
+    #     2. Final training on full domain
+    #     """
+    #     # Pre-training phase
+    #     self.pretrain(
+    #         x_initial, initial_condition,
+    #         x_boundary, boundary_condition,
+    #         x_residual, pde_operator
+    #     )
+        
+    #     # Final training phase
+    #     print(f"Final training on interval [0, {self.pt_config.intervals[-1]}]")
+        
+    #     # Generate supervised data from last pre-trained model
+    #     x_sup, y_sup = self.generate_supervised_data(
+    #         x_residual, 
+    #         self.pretrained_models[-1]
+    #     )
+        
+    #     # Perform final training
+    #     final_losses = self.train_interval(
+    #         x_initial, initial_condition,
+    #         x_boundary, boundary_condition,
+    #         x_residual, pde_operator,
+    #         x_sup, y_sup
+    #     )
+        
+    #     print("Final training losses:", final_losses)
+    #     return final_losses
+    
     def train(self,
-              x_initial: torch.Tensor,
-              initial_condition: torch.Tensor,
-              x_boundary: torch.Tensor,
-              boundary_condition: torch.Tensor,
-              x_residual: torch.Tensor,
-              pde_operator: Callable) -> Dict[str, float]:
+            x_initial, initial_condition,
+            x_boundary, boundary_condition,
+            x_residual, pde_operator):
         """
         Complete training process following Algorithm 2:
         1. Pre-training on multiple intervals
         2. Final training on full domain
+        
+        Args:
+            x_initial: Tensor of shape [n_initial, input_dim] with coordinates for initial condition
+            initial_condition: Tensor of shape [n_initial, output_dim] with values for initial condition
+            x_boundary: Tensor of shape [n_boundary, input_dim] with coordinates for boundary condition
+            boundary_condition: Tensor of shape [n_boundary, output_dim] with values for boundary condition
+            x_residual: Tensor of shape [n_residual, input_dim] with coordinates for residual points
+            pde_operator: Callable that computes the PDE residual
+            
+        Returns:
+            Dictionary with final loss components
         """
         # Pre-training phase
         self.pretrain(
