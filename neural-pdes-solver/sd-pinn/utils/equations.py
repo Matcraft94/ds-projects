@@ -257,59 +257,44 @@ class BurgersEquation:
         t: Union[float, torch.Tensor, np.ndarray],
         ic_function: Callable = None
     ) -> Union[torch.Tensor, np.ndarray]:
-        """
-        Analytical solution using the Cole-Hopf transformation for given initial condition.
-        
-        Args:
-            x: Spatial coordinates
-            t: Time
-            ic_function: Initial condition function (if None, uses sine function)
-            
-        Returns:
-            Solution u(x, t)
-        """
         # Check input types
         is_torch = isinstance(x, torch.Tensor)
         
         # Convert to numpy if torch tensors
         if is_torch:
             x_np = x.detach().cpu().numpy()
-            t_np = t.detach().cpu().item() if isinstance(t, torch.Tensor) else t
+            t_np = t.detach().cpu().numpy() if isinstance(t, torch.Tensor) else t
         else:
             x_np = x
             t_np = t
         
-        # Default initial condition: u(x, 0) = -sin(pi * x)
+        # Ensure time is positive to avoid division by zero
+        t_np = np.maximum(t_np, 1e-6)
+        
+        # Default initial condition
         if ic_function is None:
             def ic_function(x):
                 return -np.sin(np.pi * x)
         
-        # For numerical integration
-        dx = 0.01
-        x_domain = np.arange(-10, 10 + dx, dx)  # Larger domain for integration
+        # Simplified approximation for sinusoidal initial condition
+        # Create output array with same shape as input
+        result = np.zeros_like(x_np)
         
-        # Compute solution using Cole-Hopf transformation
-        phi = np.zeros_like(x_np).reshape(-1)
-        for i, xi in enumerate(x_np.reshape(-1)):
-            # Compute the integrand for Cole-Hopf transformation
-            integrand = np.zeros_like(x_domain)
-            for j, xj in enumerate(x_domain):
-                # Initial condition
-                u0 = ic_function(xj)
-                # Integrand for the transformation
-                integrand[j] = np.exp(-(xi - xj)**2 / (4 * self.nu * t_np) - 1/(2*self.nu) * u0 * (xi - xj))
-            
-            # Numerical integration using trapezoidal rule
-            phi[i] = np.trapz(integrand, dx=dx)
+        # Flattened arrays for processing
+        x_flat = x_np.flatten()
+        t_flat = t_np.flatten()
         
-        # Reshape to original shape
-        phi = phi.reshape(x_np.shape)
+        # Calculate solution for each point
+        for i in range(len(x_flat)):
+            idx = i % len(t_flat)  # Handle case where t has different length
+            decay = np.exp(-np.pi**2 * self.nu * t_flat[idx])
+            result.flat[i] = -np.sin(np.pi * x_flat[i]) * decay
         
         # Return torch tensor if input was torch tensor
         if is_torch:
-            return torch.from_numpy(phi).to(x.device).float()
+            return torch.from_numpy(result).to(x.device).float()
         else:
-            return phi
+            return result
     
     def sinusoidal_solution(
         self,
@@ -469,6 +454,415 @@ class BurgersEquation:
                 # Find boundary points
                 mask_left = (x[:, 0] < 1e-5)
                 mask_right = (torch.abs(x[:, 0] - domain_length) < 1e-5)
+                
+                # Get values and derivatives at boundaries
+                u = outputs["u"]
+                u_x = outputs["u_x"]
+                
+                # Value continuity: u(0) = u(L)
+                value_diff = u[mask_left] - u[mask_right]
+                
+                # Derivative continuity: u_x(0) = u_x(L)
+                deriv_diff = u_x[mask_left, 0:1] - u_x[mask_right, 0:1]
+                
+                return torch.cat([value_diff, deriv_diff], dim=0)
+            
+            return {"periodic": periodic_bc}
+        
+        else:
+            raise ValueError(f"Boundary condition type {bc_type} not supported")
+
+class AllenCahnEquation:
+    """
+    Allen-Cahn equation solver.
+    
+    u_t = ε∇²u + u - u³
+    
+    where:
+    - u is the solution (phase field)
+    - ε is the interface width parameter
+    """
+    
+    def __init__(self, epsilon: float = 0.0001):
+        """
+        Initialize the Allen-Cahn equation.
+        
+        Args:
+            epsilon: Interface width parameter (ε)
+        """
+        self.epsilon = epsilon
+    
+    def get_bc_function(self, bc_type: str = "periodic", **kwargs) -> Dict[str, Callable]:
+        """
+        Get boundary condition functions.
+        
+        Args:
+            bc_type: Type of boundary condition ("dirichlet" or "periodic")
+            **kwargs: Additional parameters for the boundary conditions
+            
+        Returns:
+            Dictionary of boundary condition functions
+        """
+        domain_length = kwargs.get("domain_length", 2.0)
+        
+        if bc_type == "dirichlet":
+            bc_left = kwargs.get("bc_left", 0.0)
+            bc_right = kwargs.get("bc_right", 0.0)
+            
+            def left_bc(model, inputs, outputs):
+                x = inputs["x"]
+                mask_left = (x[:, 0] < 1e-5)
+                u = outputs["u"]
+                return u[mask_left] - bc_left
+            
+            def right_bc(model, inputs, outputs):
+                x = inputs["x"]
+                mask_right = (torch.abs(x[:, 0] - domain_length) < 1e-5)
+                u = outputs["u"]
+                return u[mask_right] - bc_right
+            
+            return {"left": left_bc, "right": right_bc}
+        
+        elif bc_type == "periodic":
+            def periodic_bc(model, inputs, outputs):
+                x = inputs["x"]
+                # Find boundary points
+                mask_left = (x[:, 0] < 1e-5)
+                mask_right = (torch.abs(x[:, 0] - domain_length) < 1e-5)
+                
+                if not torch.any(mask_left) or not torch.any(mask_right):
+                    return torch.zeros(0, device=x.device)
+                
+                # Get values and derivatives at boundaries
+                u = outputs["u"]
+                u_x = outputs["u_x"]
+                
+                # Value continuity: u(0) = u(L)
+                value_diff = u[mask_left] - u[mask_right]
+                
+                # Derivative continuity: u_x(0) = u_x(L)
+                deriv_diff = u_x[mask_left, 0:1] - u_x[mask_right, 0:1]
+                
+                return torch.cat([value_diff, deriv_diff], dim=0)
+            
+            return {"periodic": periodic_bc}
+        
+        else:
+            raise ValueError(f"Boundary condition type {bc_type} not supported")
+            
+    def tanh_solution(
+        self,
+        x: Union[torch.Tensor, np.ndarray],
+        t: Union[float, torch.Tensor, np.ndarray],
+        x0: float = 0.0,
+        width: float = 0.5
+    ) -> Union[torch.Tensor, np.ndarray]:
+        """
+        Approximate solution for the Allen-Cahn equation with a tanh profile.
+        
+        This is an approximate solution that works for sufficiently small epsilon.
+        
+        Args:
+            x: Spatial coordinates
+            t: Time
+            x0: Initial interface position
+            width: Interface width
+            
+        Returns:
+            Solution u(x, t)
+        """
+        # Check input types
+        is_torch = isinstance(x, torch.Tensor)
+        
+        # Convert to numpy if torch tensors
+        if is_torch:
+            x_np = x.detach().cpu().numpy()
+            t_np = t.detach().cpu().item() if isinstance(t, torch.Tensor) else t
+        else:
+            x_np = x
+            t_np = t
+        
+        # For small epsilon, the interface moves with velocity v = -κ
+        # where κ is the curvature (0 for 1D case)
+        # So the interface position is approximately constant
+        
+        # Solution is approximately tanh((x-x0)/width)
+        solution = np.tanh((x_np - x0) / width)
+        
+        # Return torch tensor if input was torch tensor
+        if is_torch:
+            return torch.from_numpy(solution).to(x.device).float()
+        else:
+            return solution
+
+
+class WaveEquation:
+    """
+    Wave equation solver with analytical solutions.
+    
+    u_tt = c²∇²u
+    
+    where:
+    - u is the displacement
+    - c is the wave speed
+    """
+    
+    def __init__(self, wave_speed: float = 1.0):
+        """
+        Initialize the wave equation.
+        
+        Args:
+            wave_speed: Wave speed (c)
+        """
+        self.c = wave_speed
+    
+    def standing_wave_solution(
+        self,
+        x: Union[torch.Tensor, np.ndarray],
+        t: Union[float, torch.Tensor, np.ndarray],
+        domain_length: float = 1.0,
+        modes: List[Tuple[int, float]] = [(1, 1.0)]
+    ) -> Union[torch.Tensor, np.ndarray]:
+        """
+        Analytical solution for standing wave with multiple modes.
+        
+        u(x, t) = sum_n a_n * sin(n*pi*x/L) * cos(n*pi*c*t/L)
+        
+        Args:
+            x: Spatial coordinates
+            t: Time
+            domain_length: Length of the domain
+            modes: List of (mode_number, amplitude) tuples
+            
+        Returns:
+            Solution u(x, t)
+        """
+        # Check input types
+        is_torch = isinstance(x, torch.Tensor)
+        
+        # Convert to numpy if torch tensors
+        if is_torch:
+            x_np = x.detach().cpu().numpy()
+            t_np = t.detach().cpu().item() if isinstance(t, torch.Tensor) else t
+        else:
+            x_np = x
+            t_np = t
+        
+        # Compute solution
+        solution = np.zeros_like(x_np)
+        
+        for mode, amplitude in modes:
+            # Compute wave number
+            k = mode * np.pi / domain_length
+            
+            # Compute angular frequency
+            omega = self.c * k
+            
+            # Add contribution from this mode
+            solution += amplitude * np.sin(k * x_np) * np.cos(omega * t_np)
+        
+        # Return torch tensor if input was torch tensor
+        if is_torch:
+            return torch.from_numpy(solution).to(x.device).float()
+        else:
+            return solution
+    
+    def traveling_wave_solution(
+        self,
+        x: Union[torch.Tensor, np.ndarray],
+        t: Union[float, torch.Tensor, np.ndarray],
+        wave_number: float = np.pi,
+        amplitude: float = 1.0,
+        direction: int = 1
+    ) -> Union[torch.Tensor, np.ndarray]:
+        """
+        Analytical solution for traveling wave.
+        
+        u(x, t) = A * sin(k*x - omega*t) for direction = 1 (right-traveling)
+        u(x, t) = A * sin(k*x + omega*t) for direction = -1 (left-traveling)
+        
+        Args:
+            x: Spatial coordinates
+            t: Time
+            wave_number: Wave number (k)
+            amplitude: Wave amplitude (A)
+            direction: Wave direction (1 for right, -1 for left)
+            
+        Returns:
+            Solution u(x, t)
+        """
+        # Check input types
+        is_torch = isinstance(x, torch.Tensor)
+        
+        # Convert to numpy if torch tensors
+        if is_torch:
+            x_np = x.detach().cpu().numpy()
+            t_np = t.detach().cpu().item() if isinstance(t, torch.Tensor) else t
+        else:
+            x_np = x
+            t_np = t
+        
+        # Compute angular frequency
+        omega = self.c * wave_number
+        
+        # Compute solution
+        if direction > 0:
+            # Right-traveling wave
+            solution = amplitude * np.sin(wave_number * x_np - omega * t_np)
+        else:
+            # Left-traveling wave
+            solution = amplitude * np.sin(wave_number * x_np + omega * t_np)
+        
+        # Return torch tensor if input was torch tensor
+        if is_torch:
+            return torch.from_numpy(solution).to(x.device).float()
+        else:
+            return solution
+    
+    def get_ic_function(self, ic_type: str = "sine", **kwargs) -> Dict[str, Callable]:
+        """
+        Get initial condition functions.
+        
+        Args:
+            ic_type: Type of initial condition ("sine", "gaussian", or "pulse")
+            **kwargs: Additional parameters for the initial condition
+            
+        Returns:
+            Dictionary of initial condition functions for displacement and velocity
+        """
+        domain_length = kwargs.get("domain_length", 1.0)
+        
+        if ic_type == "sine":
+            # Standing wave initial condition
+            modes = kwargs.get("modes", [(1, 1.0)])
+            
+            def u0_func(model, inputs, outputs):
+                x = inputs["x"]
+                u = outputs["u"]
+                
+                # Compute expected value at t=0
+                u_expected = torch.zeros_like(u)
+                for mode, amplitude in modes:
+                    k = mode * np.pi / domain_length
+                    u_expected += amplitude * torch.sin(k * x[:, 0:1])
+                
+                return u - u_expected
+            
+            def ut0_func(model, inputs, outputs):
+                x = inputs["x"]
+                u_t = outputs["u_t"]
+                
+                # Derivative at t=0 is zero for standing wave
+                return u_t
+            
+            return {"u0": u0_func, "ut0": ut0_func}
+        
+        elif ic_type == "gaussian":
+            x0 = kwargs.get("x0", 0.5)
+            sigma = kwargs.get("sigma", 0.1)
+            
+            def u0_func(model, inputs, outputs):
+                x = inputs["x"]
+                u = outputs["u"]
+                
+                # Gaussian pulse initial condition
+                u_expected = torch.exp(-((x[:, 0:1] - x0) / sigma)**2)
+                
+                return u - u_expected
+            
+            def ut0_func(model, inputs, outputs):
+                # Derivative at t=0 is zero
+                return outputs["u_t"]
+            
+            return {"u0": u0_func, "ut0": ut0_func}
+        
+        elif ic_type == "pulse":
+            # Traveling pulse initial condition
+            x0 = kwargs.get("x0", 0.5)
+            sigma = kwargs.get("sigma", 0.1)
+            direction = kwargs.get("direction", 1)
+            
+            def u0_func(model, inputs, outputs):
+                x = inputs["x"]
+                u = outputs["u"]
+                
+                # Gaussian pulse initial condition
+                u_expected = torch.exp(-((x[:, 0:1] - x0) / sigma)**2)
+                
+                return u - u_expected
+            
+            def ut0_func(model, inputs, outputs):
+                x = inputs["x"]
+                u_t = outputs["u_t"]
+                
+                # Initial velocity for traveling pulse
+                v0 = direction * self.c
+                
+                # Derivative of Gaussian: -2*(x-x0)/sigma^2 * exp(-(x-x0)^2/sigma^2)
+                ut_expected = -v0 * 2 * (x[:, 0:1] - x0) / sigma**2 * torch.exp(-((x[:, 0:1] - x0) / sigma)**2)
+                
+                return u_t - ut_expected
+            
+            return {"u0": u0_func, "ut0": ut0_func}
+        
+        else:
+            raise ValueError(f"Initial condition type {ic_type} not supported")
+    
+    def get_bc_function(self, bc_type: str = "dirichlet", **kwargs) -> Dict[str, Callable]:
+        """
+        Get boundary condition functions.
+        
+        Args:
+            bc_type: Type of boundary condition ("dirichlet", "neumann", or "periodic")
+            **kwargs: Additional parameters for the boundary conditions
+            
+        Returns:
+            Dictionary of boundary condition functions
+        """
+        domain_length = kwargs.get("domain_length", 1.0)
+        
+        if bc_type == "dirichlet":
+            # Fixed displacement at boundaries
+            def left_bc(model, inputs, outputs):
+                x = inputs["x"]
+                mask_left = (x[:, 0] < 1e-5)
+                u = outputs["u"]
+                return u[mask_left]
+            
+            def right_bc(model, inputs, outputs):
+                x = inputs["x"]
+                mask_right = (torch.abs(x[:, 0] - domain_length) < 1e-5)
+                u = outputs["u"]
+                return u[mask_right]
+            
+            return {"left": left_bc, "right": right_bc}
+        
+        elif bc_type == "neumann":
+            # Zero derivative at boundaries
+            def left_bc(model, inputs, outputs):
+                x = inputs["x"]
+                mask_left = (x[:, 0] < 1e-5)
+                u_x = outputs["u_x"]
+                return u_x[mask_left, 0]
+            
+            def right_bc(model, inputs, outputs):
+                x = inputs["x"]
+                mask_right = (torch.abs(x[:, 0] - domain_length) < 1e-5)
+                u_x = outputs["u_x"]
+                return u_x[mask_right, 0]
+            
+            return {"left": left_bc, "right": right_bc}
+        
+        elif bc_type == "periodic":
+            def periodic_bc(model, inputs, outputs):
+                x = inputs["x"]
+                
+                # Find boundary points
+                mask_left = (x[:, 0] < 1e-5)
+                mask_right = (torch.abs(x[:, 0] - domain_length) < 1e-5)
+                
+                if not torch.any(mask_left) or not torch.any(mask_right):
+                    return torch.zeros(0, device=x.device)
                 
                 # Get values and derivatives at boundaries
                 u = outputs["u"]

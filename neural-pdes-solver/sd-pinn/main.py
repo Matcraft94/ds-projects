@@ -87,8 +87,25 @@ def save_config(config, experiment_dir):
     # Convert non-serializable items to strings
     serializable_config = {}
     for key, value in config.items():
-        if isinstance(value, (int, float, str, bool, list, dict, tuple)) or value is None:
+        if key in ["test_data", "model", "dataset", "loss_fn", "exact_solution"]:
+            # Skip these complex objects
+            serializable_config[key] = str(type(value))
+        elif isinstance(value, (int, float, str, bool)) or value is None:
             serializable_config[key] = value
+        elif isinstance(value, (list, tuple)):
+            # Handle lists/tuples with potential tensor elements
+            try:
+                serializable_config[key] = value
+            except:
+                serializable_config[key] = str(value)
+        elif isinstance(value, dict):
+            # Handle dictionaries with potential tensor elements
+            serializable_config[key] = {}
+            for k, v in value.items():
+                if isinstance(v, (int, float, str, bool)) or v is None:
+                    serializable_config[key][k] = v
+                else:
+                    serializable_config[key][k] = str(v)
         else:
             serializable_config[key] = str(value)
     
@@ -677,6 +694,134 @@ def setup_helmholtz(args, device):
         "test_data": (test_input, test_output)
     }
 
+def setup_burgers(args, device):
+    """Set up Burgers equation experiment."""
+    # Domain bounds
+    if args.domain_bounds:
+        x_min, x_max = args.domain_bounds[0], args.domain_bounds[1]
+        t_min, t_max = args.domain_bounds[2], args.domain_bounds[3] if len(args.domain_bounds) > 3 else (0.0, 1.0)
+    else:
+        x_min, x_max = -1.0, 1.0
+        t_min, t_max = 0.0, 1.0
+    
+    domain_bounds = {"x": (x_min, x_max), "t": (t_min, t_max)}
+    
+    # Equation parameters
+    viscosity = args.viscosity if args.viscosity else 0.01/np.pi
+    
+    # Create equation object
+    equation = BurgersEquation(viscosity=viscosity)
+    
+    # Generate data points
+    residual_points = generate_random_points(
+        domain_bounds=domain_bounds,
+        n_points=args.n_residual,
+        sampling=args.sampling,
+        seed=args.seed,
+        device=device
+    )
+    
+    boundary_points = generate_boundary_points(
+        domain_bounds=domain_bounds,
+        n_points_per_boundary=args.n_boundary // 4,  # Divide by number of boundaries
+        boundaries=[("x", "min"), ("x", "max"), ("t", "min"), ("t", "max")],
+        sampling=args.sampling,
+        seed=args.seed,
+        device=device
+    )
+    
+    initial_points = generate_initial_points(
+        domain_bounds=domain_bounds,
+        time_var="t",
+        n_points=args.n_initial,
+        sampling=args.sampling,
+        seed=args.seed,
+        device=device
+    )
+    
+    # Create initial and boundary condition functions
+    ic_func = equation.get_ic_function(ic_type="sine")
+    bc_funcs = equation.get_bc_function(
+        bc_type="dirichlet", 
+        domain_length=x_max - x_min,
+        bc_left=0.0, 
+        bc_right=0.0
+    )
+    
+    # Create loss function
+    loss_fn = BurgersLoss(
+        viscosity=viscosity,
+        initial_condition=ic_func,
+        boundary_conditions=bc_funcs
+    )
+    
+    # Create dataset
+    dataset = PINNDataset(
+        residual_points=residual_points,
+        boundary_points=boundary_points,
+        initial_points=initial_points,
+        batch_size=args.batch_size
+    )
+    
+    # Create model
+    if args.model_type == "pinn":
+        model = PINN(
+            input_dim=2,  # x, t
+            output_dim=1,  # u
+            hidden_layers=args.hidden_layers or [20, 20, 20, 20, 20, 20, 20, 20],
+            activation=args.activation or "tanh"
+        ).to(device)
+    elif args.model_type == "sa-pinn":
+        model = SAPINN(
+            input_dim=2,  # x, t
+            output_dim=1,  # u
+            hidden_layers=args.hidden_layers or [20, 20, 20, 20, 20, 20, 20, 20],
+            n_residual=len(residual_points["x"]),
+            n_boundary=len(boundary_points["x"]),
+            n_initial=len(initial_points["x"]),
+            mask_type=args.mask_type or "polynomial",
+            activation=args.activation or "tanh",
+            device=device
+        ).to(device)
+    else:
+        raise ValueError(f"Model type {args.model_type} not supported")
+    
+    # Create exact solution function for evaluation (using Cole-Hopf transform)
+    def exact_solution_func(x, t):
+        # Define sine initial condition
+        def sine_ic(x):
+            return -np.sin(np.pi * x)
+        
+        if isinstance(x, torch.Tensor):
+            x_np = x.cpu().numpy()
+            t_np = t.cpu().numpy() if isinstance(t, torch.Tensor) else t
+        else:
+            x_np, t_np = x, t
+        
+        return equation.cole_hopf_solution(x_np, t_np, sine_ic)
+    
+    # Test points for error evaluation
+    test_x = torch.linspace(x_min, x_max, 100, device=device).unsqueeze(1)
+    test_t = torch.linspace(t_min, t_max, 100, device=device).unsqueeze(1)
+    X, T = torch.meshgrid(test_x.squeeze(), test_t.squeeze(), indexing="ij")
+    X_flat = X.flatten().unsqueeze(1)
+    T_flat = T.flatten().unsqueeze(1)
+    
+    test_input = torch.cat([X_flat, T_flat], dim=1)
+    test_output = torch.tensor(exact_solution_func(X_flat.cpu().numpy(), T_flat.cpu().numpy()), 
+                              device=device).float()
+    
+    return {
+        "domain_bounds": domain_bounds,
+        "equation_params": {
+            "viscosity": viscosity
+        },
+        "dataset": dataset,
+        "model": model,
+        "loss_fn": loss_fn,
+        "exact_solution": exact_solution_func,
+        "test_data": (test_input, test_output)
+    }
 
 def run_experiment(config):
     """
@@ -903,121 +1048,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-def setup_burgers(args, device):
-    """Set up Burgers equation experiment."""
-    # Domain bounds
-    if args.domain_bounds:
-        x_min, x_max = args.domain_bounds[0], args.domain_bounds[1]
-        t_min, t_max = args.domain_bounds[2], args.domain_bounds[3] if len(args.domain_bounds) > 3 else (0.0, 1.0)
-    else:
-        x_min, x_max = -1.0, 1.0
-        t_min, t_max = 0.0, 1.0
-    
-    domain_bounds = {"x": (x_min, x_max), "t": (t_min, t_max)}
-    
-    # Equation parameters
-    viscosity = args.viscosity if args.viscosity else 0.01/np.pi
-    
-    # Create equation object
-    equation = BurgersEquation(viscosity=viscosity)
-    
-    # Generate data points
-    residual_points = generate_random_points(
-        domain_bounds=domain_bounds,
-        n_points=args.n_residual,
-        sampling=args.sampling,
-        seed=args.seed,
-        device=device
-    )
-    
-    boundary_points = generate_boundary_points(
-        domain_bounds=domain_bounds,
-        n_points_per_boundary=args.n_boundary // 4,  # Divide by number of boundaries
-        boundaries=[("x", "min"), ("x", "max"), ("t", "min"), ("t", "max")],
-        sampling=args.sampling,
-        seed=args.seed,
-        device=device
-    )
-    
-    initial_points = generate_initial_points(
-        domain_bounds=domain_bounds,
-        time_var="t",
-        n_points=args.n_initial,
-        sampling=args.sampling,
-        seed=args.seed,
-        device=device
-    )
-    
-    # Create initial and boundary condition functions
-    ic_func = equation.get_ic_function(ic_type="sine")
-    bc_funcs = equation.get_bc_function(
-        bc_type="dirichlet", 
-        domain_length=x_max - x_min,
-        bc_left=0.0, 
-        bc_right=0.0
-    )
-    
-    # Create loss function
-    loss_fn = BurgersLoss(
-        viscosity=viscosity,
-        initial_condition=ic_func,
-        boundary_conditions=bc_funcs
-    )
-    
-    # Create dataset
-    dataset = PINNDataset(
-        residual_points=residual_points,
-        boundary_points=boundary_points,
-        initial_points=initial_points,
-        batch_size=args.batch_size
-    )
-    
-    # Create model
-    if args.model_type == "pinn":
-        model = PINN(
-            input_dim=2,  # x, t
-            output_dim=1,  # u
-            hidden_layers=args.hidden_layers or [20, 20, 20, 20, 20, 20, 20, 20],
-            activation=args.activation or "tanh"
-        ).to(device)
-    elif args.model_type == "sa-pinn":
-        model = SAPINN(
-            input_dim=2,  # x, t
-            output_dim=1,  # u
-            hidden_layers=args.hidden_layers or [20, 20, 20, 20, 20, 20, 20, 20],
-            n_residual=len(residual_points["x"]),
-            n_boundary=len(boundary_points["x"]),
-            n_initial=len(initial_points["x"]),
-            mask_type=args.mask_type or "polynomial",
-            activation=args.activation or "tanh",
-            device=device
-        ).to(device)
-    else:
-        raise ValueError(f"Model type {args.model_type} not supported")
-    
-    # Create exact solution function for evaluation (using Cole-Hopf transform)
-    def exact_solution_func(x, t):
-        # Define sine initial condition
-        def sine_ic(x):
-            return -np.sin(np.pi * x)
-        
-        if isinstance(x, torch.Tensor):
-            x_np = x.cpu().numpy()
-            t_np = t.cpu().numpy() if isinstance(t, torch.Tensor) else t
-        else:
-            x_np, t_np = x, t
-        
-        return equation.cole_hopf_solution(x_np, t_np, sine_ic)
-    
-    # Test points for error evaluation
-    test_x = torch.linspace(x_min, x_max, 100, device=device).unsqueeze(1)
-    test_t = torch.linspace(t_min, t_max, 100, device=device).unsqueeze(1)
-    X, T = torch.meshgrid(test_x.squeeze(), test_t.squeeze(), indexing="ij")
-    X_flat = X.flatten().unsqueeze(1)
-    T_flat = T.flatten().unsqueeze(1)
-    
-    test_input = torch.cat([X_flat, T_flat], dim=1)
-    test

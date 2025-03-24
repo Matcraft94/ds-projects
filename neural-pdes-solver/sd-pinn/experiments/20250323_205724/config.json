@@ -1,0 +1,27 @@
+{
+    "experiment_dir": "./experiments\\20250323_205724",
+    "checkpoints_dir": "./experiments\\20250323_205724\\checkpoints",
+    "plots_dir": "./experiments\\20250323_205724\\plots",
+    "equation": "burgers",
+    "model_type": "sa-pinn",
+    "device": "cuda:0",
+    "seed": 42,
+    "domain_bounds": {
+        "x": [
+            -1.0,
+            1.0
+        ],
+        "t": [
+            0.0,
+            1.0
+        ]
+    },
+    "equation_params": {
+        "viscosity": 0.003183098861837907
+    },
+    "dataset": "<utils.data_generator.PINNDataset object at 0x000001561FDF4490>",
+    "model": "SAPINN(\n  (activation): Tanh()\n  (layers): ModuleList(\n    (0): Linear(in_features=2, out_features=20, bias=True)\n    (1-7): 7 x Linear(in_features=20, out_features=20, bias=True)\n    (8): Linear(in_features=20, out_features=1, bias=True)\n  )\n  (dropout): Dropout(p=0.0, inplace=False)\n  (adaptive_weights): SAPINNWeights(\n    (mask): SoftAttentionMask()\n  )\n)",
+    "loss_fn": "<training.loss_functions.BurgersLoss object at 0x000001561FDF45E0>",
+    "exact_solution": "<function setup_burgers.<locals>.exact_solution_func at 0x000001561FE2BEE0>",
+    "test_data": [
+        

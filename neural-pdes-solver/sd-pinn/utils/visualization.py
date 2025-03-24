@@ -347,8 +347,8 @@ def plot_2d_solution(
     x_domain: Tuple[float, float],
     y_domain: Tuple[float, float],
     t: Optional[float] = None,
-    resolution: int = 100,
     exact_solution: Optional[Callable] = None,
+    resolution: int = 100,
     plot_type: str = "surface",
     cmap: str = "viridis",
     title: str = "Solution",
@@ -363,8 +363,8 @@ def plot_2d_solution(
         x_domain: x-domain bounds (x_min, x_max)
         y_domain: y-domain bounds (y_min, y_max)
         t: Time at which to plot the solution (if None, assumes steady-state)
-        resolution: Number of points in each dimension
         exact_solution: Exact solution function (optional)
+        resolution: Number of points in each dimension
         plot_type: Type of plot ('surface', 'contour', or 'both')
         cmap: Colormap to use
         title: Plot title
@@ -475,9 +475,8 @@ def plot_2d_solution(
 def plot_solution_error(
     model: torch.nn.Module,
     x_domain: Tuple[float, float],
-    t_domain: Optional[Tuple[float, float]] = None,
     exact_solution: Callable,
-
+    t_domain: Optional[Tuple[float, float]] = None,
     resolution: int = 100,
     cmap: str = "coolwarm",
     log_scale: bool = False,

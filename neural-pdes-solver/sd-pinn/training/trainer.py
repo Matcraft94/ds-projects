@@ -224,8 +224,14 @@ class PINNTrainer:
             iterator = tqdm(dataloader, desc="Training", leave=False)
         
         for batch in iterator:
-            # Move batch to device
-            batch = {k: v.to(self.device) for k, v in batch.items()}
+            # Move batch to device - handle nested dictionaries
+            processed_batch = {}
+            for k, v in batch.items():
+                if isinstance(v, dict):
+                    processed_batch[k] = {sub_k: sub_v.to(self.device) for sub_k, sub_v in v.items()}
+                else:
+                    processed_batch[k] = v.to(self.device)
+            batch = processed_batch
             
             # Perform training step
             step_loss = self.train_step(batch)
@@ -277,7 +283,13 @@ class PINNTrainer:
                 if isinstance(self.model, SAPINN):
                     # For SA-PINN: Apply masks to losses
                     masked_components = self.model.get_masked_losses(loss_components)
+
+                    # Network update (minimize loss)
                     total_loss = sum(masked_components.values())
+                    # Ensure loss is scalar by taking mean if it's not already
+                    if total_loss.dim() > 0:
+                        total_loss = total_loss.mean()
+                    total_loss.backward(retain_graph=True)
                 else:
                     # For standard PINN
                     total_loss = sum(loss_components.values())

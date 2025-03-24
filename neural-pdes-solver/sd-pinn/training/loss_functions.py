@@ -602,5 +602,136 @@ class WaveLoss(PINNLoss):
     ):
         """
         Initialize the wave equation loss function.
+        
+        Args:
+            wave_speed: Wave speed (c)
+            initial_displacement: Function that computes the initial displacement error
+            initial_velocity: Function that computes the initial velocity error
+            boundary_conditions: Dictionary of functions for boundary conditions
+            data_loss_fn: Function to compute the data fitting loss
+            mse_reduction: Reduction method for MSE loss
         """
-        # Definición de la función residual y otras implementaciones...
+        # Define PDE residual function
+        def wave_residual(model, inputs, outputs):
+            # Extract coordinates and time
+            x = inputs.get("x")
+            t = inputs.get("t")
+            
+            # Extract solution and derivatives
+            u = outputs["u"]
+            u_t = outputs.get("u_t")
+            
+            # Get spatial dimension
+            dim = x.shape[1]
+            
+            # Compute u_tt by differentiating u_t
+            u_tt = torch.autograd.grad(
+                outputs=u_t[:, 0],
+                inputs=t,
+                grad_outputs=torch.ones_like(u_t[:, 0]),
+                create_graph=True,
+                retain_graph=True
+            )[0]
+            
+            # Compute Laplacian (∇²u)
+            laplacian = torch.zeros_like(u)
+            for i in range(dim):
+                laplacian += outputs[f"u_xx_{i}"].unsqueeze(1)
+            
+            # Compute PDE residual: u_tt - c²⋅∇²u = 0
+            residual = u_tt - wave_speed**2 * laplacian
+            
+            return residual
+        
+        # Initialize initial condition functions
+        initial_conditions = {}
+        if initial_displacement is not None:
+            initial_conditions["u0"] = initial_displacement
+        if initial_velocity is not None:
+            initial_conditions["ut0"] = initial_velocity
+        
+        # Initialize parent class
+        super().__init__(
+            pde_residual_fn=wave_residual,
+            boundary_condition_fns=boundary_conditions,
+            initial_condition_fns=initial_conditions,
+            data_loss_fn=data_loss_fn,
+            mse_reduction=mse_reduction
+        )
+        
+        # Store parameters
+        self.wave_speed = wave_speed
+
+
+class HelmholtzLoss(PINNLoss):
+    """
+    Loss function for the Helmholtz equation.
+    
+    Implements loss components for the Helmholtz equation of the form:
+    ∇²u + k²u = f
+    
+    where:
+    - u is the solution (scalar field)
+    - k is the wave number
+    - f is the source term
+    """
+    
+    def __init__(
+        self,
+        wave_number: float,
+        source_term: Union[float, Callable] = 0.0,
+        boundary_conditions: Optional[Dict[str, Callable]] = None,
+        data_loss_fn: Optional[Callable] = None,
+        mse_reduction: str = "mean"
+    ):
+        """
+        Initialize the Helmholtz equation loss function.
+        
+        Args:
+            wave_number: Wave number (k)
+            source_term: Source term (f) as a scalar or function
+            boundary_conditions: Dictionary of functions for boundary conditions
+            data_loss_fn: Function to compute the data fitting loss
+            mse_reduction: Reduction method for MSE loss
+        """
+        # Define PDE residual function
+        def helmholtz_residual(model, inputs, outputs):
+            # Extract coordinates
+            x = inputs.get("x")
+            
+            # Extract solution
+            u = outputs["u"]
+            
+            # Get spatial dimension
+            dim = x.shape[1]
+            
+            # Compute Laplacian (∇²u)
+            laplacian = torch.zeros_like(u)
+            for i in range(dim):
+                laplacian += outputs[f"u_xx_{i}"].unsqueeze(1)
+            
+            # Process source term
+            if callable(source_term):
+                # Source term is a function of coordinates
+                f = source_term(x)
+            else:
+                # Source term is a scalar
+                f = torch.ones_like(u) * source_term
+            
+            # Compute PDE residual: ∇²u + k²u - f = 0
+            residual = laplacian + wave_number**2 * u - f
+            
+            return residual
+        
+        # Initialize parent class
+        super().__init__(
+            pde_residual_fn=helmholtz_residual,
+            boundary_condition_fns=boundary_conditions,
+            initial_condition_fns={},  # No initial conditions for Helmholtz
+            data_loss_fn=data_loss_fn,
+            mse_reduction=mse_reduction
+        )
+        
+        # Store parameters
+        self.wave_number = wave_number
+        self.source_term = source_term

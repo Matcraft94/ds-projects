@@ -1,0 +1,21 @@
+{
+    "experiment_dir": "./experiments\\20250323_205814",
+    "checkpoints_dir": "./experiments\\20250323_205814\\checkpoints",
+    "plots_dir": "./experiments\\20250323_205814\\plots",
+    "equation": "burgers",
+    "model_type": "sa-pinn",
+    "device": "cuda:0",
+    "seed": 42,
+    "domain_bounds": {
+        "x": "(-1.0, 1.0)",
+        "t": "(0.0, 1.0)"
+    },
+    "equation_params": {
+        "viscosity": 0.003183098861837907
+    },
+    "dataset": "<class 'utils.data_generator.PINNDataset'>",
+    "model": "<class 'models.sa_pinn.SAPINN'>",
+    "loss_fn": "<class 'training.loss_functions.BurgersLoss'>",
+    "exact_solution": "<class 'function'>",
+    "test_data": "<class 'tuple'>"
+}
