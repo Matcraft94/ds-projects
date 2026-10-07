@@ -5,44 +5,62 @@ import torch
 from typing import Dict, Tuple
 
 class BacktestStrategy:
-    def __init__(self, data: pd.DataFrame, model: torch.nn.Module = None, scaler = None):
+    def __init__(
+        self,
+        data: pd.DataFrame,
+        model: torch.nn.Module = None,
+        scaler = None,
+        scaler_stats: dict = None,
+        target_col: str = "close",
+    ):
         """
         Inicializa la estrategia de backtesting.
-        
+
         Args:
             data: DataFrame con los datos de mercado
             model: Modelo LSTM entrenado (opcional)
-            scaler: StandardScaler ajustado (opcional)
+            scaler: no usado (mantenido por compatibilidad)
+            scaler_stats: estadísticas de normalización ajustadas en el fold
+                de entrenamiento (dict con 'mean', 'std', 'columns' — ver
+                MarketDataset.fit_scaler). Las predicciones se
+                des-normalizan a escala de precio antes de compararse con close.
+            target_col: columna objetivo del modelo
         """
         self.data = data
         self.model = model
         self.scaler = scaler
+        self.scaler_stats = scaler_stats
+        self.target_col = target_col
         self.positions = pd.Series(index=data.index, dtype=float)
         self.window_size = 60
         self.predictions = None
-        
+
     def generate_predictions(self) -> np.ndarray:
-        """Genera predicciones usando el modelo LSTM si está disponible."""
-        if self.model is None or self.scaler is None:
+        """Genera predicciones usando el modelo LSTM si está disponible.
+
+        Las predicciones se des-normalizan con las estadísticas del target
+        para quedar en escala de precio y poder compararse con 'close'.
+        """
+        if self.model is None or self.scaler_stats is None:
             return None
-            
+
         self.model.eval()
         predictions = []
-        
-        # Preparar datos para predicción
-        scaled_data = pd.DataFrame(
-            self.scaler.transform(self.data),
-            columns=self.data.columns,
-            index=self.data.index
-        )
-        
+
+        stats = self.scaler_stats
+        cols = list(stats["columns"])
+        scaled = (self.data[cols] - stats["mean"]) / stats["std"]
+
+        target_mean = stats["mean"][self.target_col]
+        target_std = stats["std"][self.target_col]
+
         with torch.no_grad():
-            for i in range(self.window_size, len(scaled_data)):
-                window = scaled_data.iloc[i-self.window_size:i].values
+            for i in range(self.window_size, len(scaled)):
+                window = scaled.iloc[i - self.window_size:i].values
                 window_tensor = torch.FloatTensor(window).unsqueeze(0)
-                prediction = self.model(window_tensor)
-                predictions.append(prediction.item())
-        
+                prediction = self.model(window_tensor).item()
+                predictions.append(prediction * target_std + target_mean)
+
         full_predictions = np.array([np.nan] * self.window_size + predictions)
         self.predictions = full_predictions
         return full_predictions
@@ -76,35 +94,49 @@ class BacktestStrategy:
     def generate_signals(self) -> pd.Series:
         """Combina señales de volatilidad y modelo"""
         vol_signals = self.generate_volatility_signals()
-        
-        if self.model is not None:
+
+        if self.model is not None and self.scaler_stats is not None:
             model_signals = self.generate_model_signals()
             # Combinar señales: usar señal del modelo si está disponible, sino usar volatilidad
             signals = model_signals.copy()
             signals[signals == 0] = vol_signals[signals == 0]
         else:
             signals = vol_signals
-            
+
         return signals
-    
+
     def calculate_returns(self, signals: pd.Series) -> pd.Series:
         """Calcula retornos de la estrategia"""
         position_changes = signals.diff()
         returns = self.data['returns'] * signals.shift(1)
         returns[position_changes != 0] -= 0.001  # Simular costos de transacción
         return returns
-    
-    def run_backtest(self) -> Dict:
-        """Ejecuta backtest completo"""
+
+    def run_backtest(self, periods_per_year: int = 252) -> Dict:
+        """Ejecuta backtest completo.
+
+        Args:
+            periods_per_year: barras por año para anualizar el Sharpe.
+                DEBE coincidir con la frecuencia de las barras de datos
+                (252 = diarias, 252*78 ≈ minutarias de mercado US,
+                365*24*60 = minutarias 24/7). El default 252 asume barras
+                diarias; con otra frecuencia el valor por defecto es un
+                error, no una convención.
+        """
         signals = self.generate_signals()
         returns = self.calculate_returns(signals)
-        
+
+        equity = (1 + returns).cumprod()
+        running_max = equity.cummax()
+        max_dd = ((equity - running_max) / running_max).min()
+
         results = {
-            'total_return': returns.sum(),
-            'sharpe_ratio': returns.mean() / returns.std() * np.sqrt(252),
-            'max_drawdown': (returns.cumsum() - returns.cumsum().expanding().max()).min(),
+            'total_return': equity.iloc[-1] - 1,
+            'sharpe_ratio': returns.mean() / returns.std() * np.sqrt(periods_per_year) if returns.std() > 0 else 0.0,
+            'max_drawdown': max_dd,
             'win_rate': len(returns[returns > 0]) / len(returns[returns != 0]),
-            'num_trades': (signals != 0).sum()
+            'num_trades': (signals != 0).sum(),
+            'periods_per_year': periods_per_year,
         }
-        
+
         return results

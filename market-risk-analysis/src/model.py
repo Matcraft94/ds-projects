@@ -27,7 +27,9 @@ class LSTMPredictor(nn.Module):
         )
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        torch.nn.utils.clip_grad_norm_(self.parameters(), self.clip_value)
+        # NOTE: gradient clipping used to live here, where it is a no-op
+        # (called before backward, on zeroed/stale grads). It now runs in
+        # ModelTrainer.train_epoch after loss.backward().
         lstm_out, _ = self.lstm(x)
         predictions = self.fc(lstm_out[:, -1, :])
         return predictions
@@ -52,6 +54,7 @@ class ModelTrainer:
             
             loss = self.criterion(output, y_batch.unsqueeze(1))
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), getattr(self.model, "clip_value", 1.0))
             self.optimizer.step()
             total_loss += loss.item()
             

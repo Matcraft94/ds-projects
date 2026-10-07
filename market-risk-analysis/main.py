@@ -11,40 +11,49 @@ from src.backtesting import BacktestStrategy
 from src.visualization import MarketVisualizer
 from torch.utils.data import DataLoader
 
-def load_excel_files():
+def load_data():
+    """Carga el dataset usado por el pipeline (crash500).
+
+    crash300 y crash500_2 se cargaban antes pero nunca se usaban; se
+    eliminaron para no insinuar una comparación de instrumentos que el
+    código no hace.
+    """
     current_file = os.path.abspath(__file__)
     project_dir = os.path.dirname(current_file)
-    df_300 = pd.read_excel(os.path.join(project_dir, 'data/raw/crash300.xlsx'))
-    df_500 = pd.read_excel(os.path.join(project_dir, 'data/raw/crash500.xlsx'))
-    df_500_2 = pd.read_excel(os.path.join(project_dir, 'data/raw/crash500_2.xlsx'))
-    return df_300, df_500, df_500_2
+    df = pd.read_excel(os.path.join(project_dir, 'data/raw/crash500.xlsx'))
+    return df
 
 def main():
+    # Reproducibilidad: sin semillas, los resultados no son comparables entre corridas
+    SEED = 42
+    torch.manual_seed(SEED)
+    np.random.seed(SEED)
+
     # 1. Cargar y procesar datos
-    df_300, df_500, df_500_2 = load_excel_files()
-    
+    df_500 = load_data()
+
     date_cols = ['date', 'time']
     df_500 = df_500.drop(columns=date_cols)
-    
+
     data_processor = MarketDataProcessor(window_size=60)
-    processed_300 = data_processor.load_data(df_500)
-    
+    processed = data_processor.load_data(df_500)
+
     # 2. Feature Engineering
     engineer = FeatureEngineer()
-    features_300 = engineer.create_technical_features(processed_300)
-    print("Final shape, after dropna:", features_300.shape)
+    features = engineer.create_technical_features(processed)
+    print("Final shape, after dropna:", features.shape)
     
     # 3. Verificar tamaño mínimo de datos
     window_size = 60
     min_samples = window_size * 3
     
-    if len(features_300) < min_samples:
-        raise ValueError(f"Insufficient data: {len(features_300)} samples, need at least {min_samples}")
-    
+    if len(features) < min_samples:
+        raise ValueError(f"Insufficient data: {len(features)} samples, need at least {min_samples}")
+
     # 4. Separar datos de validación final (20%)
-    train_size = int(0.8 * len(features_300))
-    train_val_data = features_300[:train_size]
-    final_validation_data = features_300[train_size:]
+    train_size = int(0.8 * len(features))
+    train_val_data = features[:train_size]
+    final_validation_data = features[train_size:]
     
     print(f"Tamaño de datos de entrenamiento+validación: {len(train_val_data)}")
     print(f"Tamaño de datos de validación final: {len(final_validation_data)}")
@@ -71,7 +80,7 @@ def main():
     batch_size = min(128, test_size // 2)  # Ajustar batch_size según el tamaño de test
     num_epochs = 10
     patience = 3
-    input_dim = len(features_300.select_dtypes(include=[np.number]).columns)
+    input_dim = len(features.select_dtypes(include=[np.number]).columns)
     hidden_dim = 32
     
     print(f"Batch size: {batch_size}")
@@ -80,6 +89,7 @@ def main():
     # 7. Entrenamiento con Time Series Split
     fold_scores = []
     best_model = None
+    best_scaler_stats = None
     best_val_loss = float('inf')
     
     for fold, (train_idx, val_idx) in enumerate(tscv.split(train_val_data)):
@@ -97,9 +107,10 @@ def main():
             print(f"Saltando fold {fold + 1} debido a datos insuficientes")
             continue
         
-        # Crear datasets
-        train_dataset = MarketDataset(train_fold, window_size)
-        val_dataset = MarketDataset(val_fold, window_size)
+        # Crear datasets con normalización ajustada SOLO en el fold de entrenamiento
+        scaler_stats = MarketDataset.fit_scaler(train_fold)
+        train_dataset = MarketDataset(train_fold, window_size, scaler_stats=scaler_stats)
+        val_dataset = MarketDataset(val_fold, window_size, scaler_stats=scaler_stats)
         
         print(f"Tamaño del dataset de entrenamiento: {len(train_dataset)}")
         print(f"Tamaño del dataset de validación: {len(val_dataset)}")
@@ -149,6 +160,7 @@ def main():
                     best_val_loss = val_loss
                     torch.save(model.state_dict(), 'best_model.pth')
                     best_model = model
+                    best_scaler_stats = scaler_stats
             else:
                 counter += 1
                 if counter >= patience:
@@ -161,12 +173,24 @@ def main():
     if not fold_scores:
         raise ValueError("No se completó ningún fold exitosamente")
     
-    print("\nResultados Time Series Cross Validation:")
-    print(f'Media de Validation Loss: {np.mean(fold_scores):.4f} ± {np.std(fold_scores):.4f}')
+    print(f"\nResultados Time Series Cross Validation:")
+    print(f"Media de Validation Loss: {np.mean(fold_scores):.4f} ± {np.std(fold_scores):.4f}")
+
+    # Persistir las estadísticas de normalización junto al mejor modelo,
+    # sin ellas best_model.pth no es usable fuera de esta corrida
+    if best_scaler_stats is not None:
+        np.savez(
+            'best_model_scaler.npz',
+            columns=np.array(best_scaler_stats['columns']),
+            mean=best_scaler_stats['mean'].values,
+            std=best_scaler_stats['std'].values,
+        )
     
     # 8. Evaluación final
     if len(final_validation_data) > window_size:
-        final_dataset = MarketDataset(final_validation_data, window_size)
+        final_dataset = MarketDataset(
+            final_validation_data, window_size, scaler_stats=best_scaler_stats
+        )
         print(f"Tamaño del dataset de validación final: {len(final_dataset)}")
         
         final_loader = DataLoader(
@@ -184,9 +208,18 @@ def main():
         
         print(f"\nPérdida en Conjunto de Validación Final: {final_loss:.4f}")
         
-        # 9. Backtesting
-        backtest = BacktestStrategy(final_validation_data)
-        results = backtest.run_backtest()
+        # 9. Backtesting — con el modelo y el scaler del mejor fold conectados
+        # (antes el backtest corría solo con señales de volatilidad y el LSTM
+        # entrenado nunca participaba)
+        backtest = BacktestStrategy(
+            final_validation_data,
+            model=best_model,
+            scaler_stats=best_scaler_stats,
+            target_col='close',
+        )
+        # Las barras son de 1 minuto en un mercado 24/7 → 365*24*60 barras/año.
+        # Anualizar con 252 (barras diarias) inflaría el Sharpe ~2000×.
+        results = backtest.run_backtest(periods_per_year=365 * 24 * 60)
         
         print("\nResultados del Backtest (Validación Final):")
         for metric, value in results.items():
