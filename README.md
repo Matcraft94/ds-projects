@@ -35,12 +35,11 @@ Production-grade multivariate Hawkes process implementation for order flow predi
 
 **Physics-Informed Neural Networks for Differential Equations**
 
-PINN implementation for solving forward and inverse PDE problems with energy conservation guarantees.
+PINN implementations for forward and inverse differential-equation problems, with documented failures alongside the successes.
 
-- Double pendulum system with domain decomposition (MSE < 1e-3)
-- NLLSQ and VarPro methods for inverse problems
-- GPU memory optimization and adaptive activation functions
-- Residual network architecture with energy conservation losses
+- Double pendulum PINN with domain decomposition over t ∈ [0, 2], fitted to a logged loss of 0.024 against the `solve_ivp` reference, with an energy-variation penalty in the loss
+- NLLSQ inverse parameter recovery for a Poisson problem (α ≈ 0.965 vs true 1.0); VarPro and Pyro SVI failures documented with their logs
+- Oregonator (BZ) regression surrogate with an explicit train/test gap (0.078 / 0.346, broadcast-MSE caveat noted)
 
 [→ View Details](./neural-pdes-solver/)
 
@@ -55,7 +54,7 @@ Automated actuarial loss prediction with advanced feature engineering and text p
 - XGBoost with hyperparameter optimization and GPU acceleration
 - NLP processing for claim descriptions
 - Segment-wise analysis and pricing optimization
-- End-to-end ML pipeline (RMSE: 23,669)
+- End-to-end ML pipeline (test RMSE 25,034 USD, MAE 7,258 on the held-out 20%)
 
 [→ View Details](./actuarial-loss-prediction/)
 
@@ -63,14 +62,11 @@ Automated actuarial loss prediction with advanced feature engineering and text p
 
 ### [Market Risk Analysis](./market-risk-analysis/)
 
-**LSTM-Based Risk Assessment Platform**
+**LSTM next-bar prediction with walk-forward validation**
 
-Market risk evaluation using deep learning and statistical arbitrage detection.
-
-- LSTM networks for market crash prediction
-- Robust preprocessing pipeline (noise reduction: 8.7%)
-- Trading simulation with risk metrics (Sharpe, Drawdown)
-- Early stopping convergence in 10 epochs
+- 2-layer LSTM on 94,858 one-minute bars; walk-forward TimeSeriesSplit (3 folds) + untouched 20% chronological holdout
+- Audited twice while documenting: seven methodological defects found and fixed, including an RSI NaN bug whose `dropna` silently deleted 21% of bars and biased every result (commit history has the full trail)
+- Honest outcome: no directional edge at the 1-minute horizon — holdout backtest -0.20% vs a market that returned -0.18% close-to-close
 
 [→ View Details](./market-risk-analysis/)
 
@@ -122,7 +118,7 @@ ds-projects/
 ├── neural-pdes-solver/         # Physics-informed neural networks
 ├── actuarial-loss-prediction/  # XGBoost claims prediction
 ├── market-risk-analysis/       # LSTM risk assessment
-├── academic-performance/       # Student dropout prediction
+├── academic-performance-prediction/  # Student dropout prediction
 ├── pdes-simulations/           # FEM numerical solutions
 └── README.md
 ```
