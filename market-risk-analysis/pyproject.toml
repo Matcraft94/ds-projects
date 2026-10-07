@@ -1,0 +1,17 @@
+[project]
+name = "market-risk-analysis"
+version = "0.1.0"
+description = "LSTM walk-forward pipeline for short-horizon market risk prediction on 1-minute bars"
+requires-python = ">=3.10"
+dependencies = [
+    "torch",
+    "pandas",
+    "numpy",
+    "scikit-learn",
+    "plotly",
+    "kaleido",
+    "openpyxl",
+]
+
+[tool.uv]
+package = false

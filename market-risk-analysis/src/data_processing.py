@@ -27,11 +27,20 @@ class MarketDataProcessor:
     
     @staticmethod
     def calculate_rsi(prices: pd.Series, period: int = 14) -> pd.Series:
-        """Calcula el RSI"""
+        """Calcula el RSI.
+
+        Defecto corregido: la versión anterior forzaba rs = NaN cuando
+        avg_loss == 0 — incluso cuando avg_gain > 0, donde el RSI es 100.
+        Con dropna() posterior, eso eliminaba ~21% de las barras,
+        concentradas en tramos alcistas, sesgando todo el pipeline.
+        Ahora: gain/0 → inf → RSI = 100 (correcto), y solo 0/0
+        (tramos planos) queda NaN.
+        """
         delta = prices.diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-        rs = pd.Series(np.where(loss == 0, np.nan, gain / loss), index=prices.index)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            rs = gain / loss
         return 100 - (100 / (1 + rs))
 
 class MarketDataset(Dataset):
