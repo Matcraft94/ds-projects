@@ -1,7 +1,7 @@
 ---
 title: "Predicción de Pérdida Actuarial usando XGBoost"
 author: "Eduardo Arias"
-date: "`r Sys.Date()`"
+date: "2026-10-07"
 output: 
   html_document:
     toc: true
@@ -9,7 +9,6 @@ output:
     theme: united
     highlight: tango
     code_folding: show
-    css: cyberpunk.css
 ---
 
 ```{r setup, include=FALSE}
@@ -23,6 +22,12 @@ knitr::opts_chunk$set(
 ```
 
 # 1. Introducción
+
+> **Nota de contexto (2026-10-07):** este análisis se originó como trabajo
+> final de un curso de Machine Learning; se mantiene como análisis de
+> referencia del proyecto. Los datos (`Data/actuarial_loss/train.csv`) provienen
+> de la competencia *Actuarial Loss Prediction* de Kaggle (compensación
+> laboral, ~54,000 reclamaciones) y no se distribuyen con el repo.
 
 ## 1.1 Contexto y Relevancia
 

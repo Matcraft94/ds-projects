@@ -34,6 +34,11 @@ Full narrative with caveats and the importance chart:
 
 ## Files and reproduce
 
-`trabajo_final_E_ARIAS.Rmd` is the source; `trabajo_final_E_ARIAS.html` is the
-rendered output with all tables. Knit the Rmd in RStudio, or open the HTML for
-the full report. `data/` holds the claims dataset.
+- `analysis.Rmd` — source (R, tidymodels); `analysis.html` — rendered report
+  with all tables and plots (the verified-numbers source of record).
+- `Data/actuarial_loss/train.csv` — **not included**: Kaggle competition
+  *Actuarial Loss Prediction* (workers' compensation). Download it and place
+  it at that path, then `Rscript -e 'rmarkdown::render("analysis.Rmd")'`.
+  Expected shape: ~54,000 rows; key columns include `ClaimNumber`,
+  `DateTimeOfAccident`, `ClaimDescription`, `InitialIncurredCalimsCost`,
+  `UltimateIncurredClaimCost` (target).
