@@ -19,15 +19,13 @@ Production-ready implementations of statistical models, machine learning systems
 Production-grade multivariate Hawkes process implementation for order flow prediction.
 
 
-| Metric           | Result  | Assessment    |
-| ---------------- | ------- | ------------- |
-| **Sharpe Ratio** | 86.98   | Exceptional   |
-| **Win Rate**     | 62.5%   | Strong        |
-| **Speedup**      | 10,000x | UltraFast MLE |
+| Metric           | Result    | Assessment                       |
+| ---------------- | --------- | -------------------------------- |
+| **Estimation Speed** | ~0.5s (4-dim) | 10,000× vs naive MLE (benchmarked) |
+| **Walk-forward Sharpe** | -0.35 (mean) | Negative out-of-sample — reported honestly |
 
-- **Key Innovations:** O(N) recursive MLE (0.5s vs >1h), real-time production trading, comprehensive statistical validation
-- **Technologies:** Numba, Cython, Time-series CV, Bootstrap inference
-- **Grade:** A+ | Production Ready
+- **Key contribution:** O(N) recursive MLE (0.5s vs >1h), statistical validation suite, real-time pipeline architecture
+- **Honest caveat:** earlier "Sharpe 86.98" claims came from a circular synthetic backtest; removed. See project README.
 
 [→ View Details](./hawkes-order-flow/)
 

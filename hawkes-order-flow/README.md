@@ -13,7 +13,7 @@ from hawkes.estimation.ultra_fast_mle import UltraFastMultivariateHawkesMLE
 # Estimate parameters in 0.5 seconds (vs >1 hour with naive MLE)
 estimator = UltraFastMultivariateHawkesMLE(n_dims=4)
 estimator.fit(events, end_time=1000.0)
-# Sharpe: 86.98 | Win Rate: 62.5% | Grade: A+
+# Fit: 0.5s | Spectral radius checked for stability
 ```
 
 ---
@@ -22,13 +22,19 @@ estimator.fit(events, end_time=1000.0)
 
 | Metric | Result | Assessment |
 |--------|--------|------------|
-| **Sharpe Ratio** | 86.98 | Exceptional (>1.5 target) |
-| **Win Rate** | 62.5% | Strong (>55% target) |
-| **Profit Factor** | 1.79 | Good (>1.5 target) |
-| **Max Drawdown** | 0.28% | Excellent (<5% limit) |
-| **Estimation Speed** | 0.5s | 10,000x faster than naive |
+| **Estimation Speed (4-dim, 1K events)** | ~0.5s | 10,000x faster than naive MLE |
+| **Walk-forward Sharpe (synthetic, notebook 03)** | -0.35 mean | Strategy not profitable out-of-sample on synthetic data |
+| **Backtest on notebook 05 generator** | per-trade t-stat reported | Synthetic price drifts on the traded signal — see caveats |
 
-**Overall Assessment: Grade A+ | Production Ready**
+**Estimation engine: production-grade. Trading strategy: unvalidated on real market data — honest status.**
+
+> **Evidence caveat:** earlier versions of this README reported "Sharpe 86.98 | Win
+> Rate 62.5% | Grade A+". Those figures came from a synthetic backtest whose price
+> process drifted on the same imbalance the strategy trades (circular construction),
+> annualized with √98,280 over a 400-second simulation. They measured the experiment,
+> not market edge, and have been removed. See `notebooks/05_real_time_application.ipynb`
+> for the corrected methodology. Real-data validation via `scripts/download_binance_data.py`
+> is the documented next step.
 
 ---
 
@@ -46,7 +52,7 @@ from hawkes.estimation.ultra_fast_mle import UltraFastMultivariateHawkesMLE
 events, _ = load_sample_data()
 estimator = UltraFastMultivariateHawkesMLE(n_dims=4)
 estimator.fit(events, end_time=1000.0)
-print(f'Sharpe: 86.98 | Win Rate: 62.5% | Stable: {estimator.compute_spectral_radius():.2f}')
+print(f'Fit stable: {estimator.compute_spectral_radius():.2f} (< 1.0 required)')
 "
 ```
 
@@ -209,4 +215,4 @@ MIT License - See [LICENSE](LICENSE) file.
 
 ---
 
-**Status: Production Ready | Grade A+ | Sharpe 86.98 | Win Rate 62.5%**
+**Status: estimation engine production-grade (10,000× MLE speedup, benchmarked). Trading strategy: honest negative out-of-sample result on synthetic data — real-data validation pending.**
