@@ -33,8 +33,10 @@ estimator.fit(events, end_time=1000.0)
 > process drifted on the same imbalance the strategy trades (circular construction),
 > annualized with √98,280 over a 400-second simulation. They measured the experiment,
 > not market edge, and have been removed. See `notebooks/05_real_time_application.ipynb`
-> for the corrected methodology. Real-data validation via `scripts/download_binance_data.py`
-> is the documented next step.
+> for the corrected methodology. Real-data validation (Binance BTCUSDT,
+> 73K trades) is complete: the estimation engine holds up (stable fit,
+> spectral radius 0.28) and the naive imbalance strategy loses exactly its
+> transaction costs — see `docs/REAL_DATA_VALIDATION.md`.
 
 ---
 

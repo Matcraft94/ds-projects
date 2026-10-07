@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 from typing import Optional, Literal
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import time
 import os
 
@@ -54,40 +54,78 @@ class BinanceDataLoader:
             DataFrame with trades
         """
         all_trades = []
+        # Work in UTC-aware datetimes throughout: naive datetimes are
+        # interpreted as local time by .timestamp() (UTC-5 here), while
+        # pd.to_datetime(..., unit='ms') returns naive UTC — mixing the two
+        # silently truncated pagination after the first page.
+        if start_time.tzinfo is None:
+            start_time = start_time.replace(tzinfo=timezone.utc)
+        if end_time.tzinfo is None:
+            end_time = end_time.replace(tzinfo=timezone.utc)
         current_time = start_time
-        
+
         print(f"Downloading {symbol} trades from {start_time} to {end_time}...")
-        
+
         while current_time < end_time:
-            # Get trades in chunks
+            # Paginate within each 1-hour chunk: aggTrades returns at most
+            # 1000 rows per call, so advance the window to
+            # (last trade time + 1ms) until the chunk is exhausted.
+            # (The previous implementation took only the first 1000 trades
+            # of each hour, silently discarding >99% of the data.)
             chunk_end = min(current_time + timedelta(hours=1), end_time)
-            
-            params = {
-                'symbol': symbol,
-                'startTime': int(current_time.timestamp() * 1000),
-                'endTime': int(chunk_end.timestamp() * 1000),
-                'limit': 1000
-            }
-            
-            try:
-                response = self.session.get(
-                    f"{self.BASE_URL}/aggTrades",
-                    params=params,
-                    timeout=30
-                )
-                response.raise_for_status()
-                trades = response.json()
-                
-                if trades:
-                    all_trades.extend(trades)
-                    print(f"  Downloaded {len(trades)} trades for {current_time}")
-                
+            window_start = current_time
+            chunk_count = 0
+
+            while window_start < chunk_end:
+                params = {
+                    'symbol': symbol,
+                    'startTime': int(window_start.timestamp() * 1000),
+                    'endTime': int(chunk_end.timestamp() * 1000),
+                    'limit': 1000
+                }
+
+                # Retry: Binance's edge intermittently answers blocked
+                # requests with an empty-body 404 instead of a JSON error;
+                # treat any non-JSON / non-200 response as retryable.
+                trades = None
+                for attempt in range(6):
+                    try:
+                        response = self.session.get(
+                            f"{self.BASE_URL}/aggTrades",
+                            params=params,
+                            timeout=30
+                        )
+                        if response.status_code == 200:
+                            parsed = response.json()
+                            if isinstance(parsed, list):
+                                trades = parsed
+                                break
+                        wait = 0.5 * (2 ** attempt)
+                        print(f"  Retry {attempt + 1}/6 (status {response.status_code}), waiting {wait:.1f}s")
+                        time.sleep(wait)
+                    except requests.RequestException as e:
+                        wait = 0.5 * (2 ** attempt)
+                        print(f"  Retry {attempt + 1}/6 ({e}), waiting {wait:.1f}s")
+                        time.sleep(wait)
+
+                if trades is None:
+                    print(f"  Giving up at {window_start}; partial data returned")
+                    break
+
+                if not trades:
+                    break
+
+                all_trades.extend(trades)
+                chunk_count += len(trades)
+                last_ts = pd.to_datetime(trades[-1]['T'], unit='ms', utc=True)
+
+                if len(trades) < 1000:
+                    break
+
+                window_start = last_ts + timedelta(milliseconds=1)
                 time.sleep(self.rate_limit_delay)
-                
-            except requests.RequestException as e:
-                print(f"  Error downloading {current_time}: {e}")
-                time.sleep(1)
-            
+
+            print(f"  Chunk {current_time} -> {chunk_end}: {chunk_count} trades")
             current_time = chunk_end
         
         if not all_trades:
@@ -219,12 +257,19 @@ def trades_to_hawkes_events(
     event_types: list[str] = ['MB', 'MS', 'LB', 'LS']
 ) -> tuple[list[np.ndarray], dict]:
     """Convert trade DataFrame to Hawkes event format.
-    
+
     Categorizes trades into 4 event types:
     - MB: Market Buy (aggressive buyer)
     - MS: Market Sell (aggressive seller)
     - LB: Limit Buy (passive buyer)
     - LS: Limit Sell (passive seller)
+
+    .. note::
+        With Binance aggTrades only the **aggressive** side of each trade is
+        observable (the taker), so LB/LS come out empty by construction —
+        passive orders never appear in the trade feed. Fit bivariate models
+        on (MB, MS) for real data; the 4-type split requires order-book
+        event data, which aggTrades does not provide.
     
     Args:
         df: Trade DataFrame with columns [time, price, quantity, side, type]
