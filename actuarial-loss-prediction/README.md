@@ -37,6 +37,35 @@ Full narrative with caveats and the importance chart:
   0.879) — the published numbers belong to the original 2025 environment,
   preserved in the rendered `analysis.html`.
 
+## Improved model (2026-10-07, `improved_model.R`)
+
+A clean-protocol experiment in a single environment (same container, same
+data, seed 42), three arms: **A** original design with audit fixes only
+(seeded split first, no target imputation); **B** `log1p` target + TF-IDF
+text features (200 stems + 100 bigrams, IDF from train only); **C** XGBoost
+Tweedie objective + TF-IDF. All arms: mini-grid (eta × depth), internal
+validation, refit, single untouched-test evaluation.
+
+| Arm | RMSE | MAE | MAPE | R² | RMSLE |
+|---|---|---|---|---|---|
+| faithful re-run (reference) | 26,354 | 7,730 | 148.9 | 0.274 | — |
+| A baseline-clean | 30,437 | 11,010 | 340 | −0.16 | 2.71 |
+| **B log1p + TF-IDF** | 23,476 | **6,050** | **59.2** | 0.309 | **0.719** |
+| **C Tweedie + TF-IDF** | **22,871** | 6,826 | 88.1 | **0.344** | 0.799 |
+
+Findings, all machine-verified: (1) the gain comes from the objective
+transform + text representation, **not** from removing the leaky split —
+arm A alone is *worse* than the faithful re-run (its own mini-grid is
+weaker than the original Latin-hypercube tuning); (2) B wins every
+relative-error metric (MAE −22% vs same-env baseline, −17% vs the
+published original) because the squared-dollar objective was ignoring the
+cheap-claims majority — quintile MAE for Q1–Q4 drops ~3–5× (e.g. Q4:
+7,479 → 2,164); (3) C is the best RMSE/R² choice (RMSE −13% same-env,
+−8.6% vs published); (4) the >Q5 expensive-claims segment remains the
+dominant error (~25k MAE) in every arm — reserve accuracy for
+high-value claims stays an open problem; (5) `InitialIncurredCalimsCost`
+is the top feature in all arms, as in the original.
+
 ## Files and reproduce
 
 - `analysis.Rmd` — source (R, tidymodels); `analysis.html` — rendered report
