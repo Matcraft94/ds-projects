@@ -66,6 +66,35 @@ dominant error (~25k MAE) in every arm — reserve accuracy for
 high-value claims stays an open problem; (5) `InitialIncurredCalimsCost`
 is the top feature in all arms, as in the original.
 
+## Model-family comparison (2026-10-07, `glm_gam_experiment.R`)
+
+Same split/seed/protocol as above, adding classic actuarial families:
+elastic-net GLM, Gamma(log) GLM, mgcv GAM (splines on continuous features),
+GAMM (GAM + AccidentYear random effect), and a two-part **hurdle** XGB
+(P(cost>50k) × Gamma severity + cheap-claims regressor).
+
+| Model | RMSE | MAE | MAPE | R² | MAE Q5 |
+|---|---|---|---|---|---|
+| XGB log1p+TF-IDF (ref) | 23,851 | **6,094** | **60.1** | 0.286 | 25,394 |
+| GLM elastic-net | 33,780 | 8,857 | 108 | −0.43 | 37,897 |
+| GLM Gamma(log) | diverged | — | — | — | — |
+| GAM (mgcv, Gamma log) | 23,388 | 8,097 | 129 | 0.314 | 28,639 |
+| GAMM (+ year RE) | 23,388 | 8,097 | 129 | 0.314 | 28,639 |
+| **Hurdle (two-part XGB)** | **22,800** | 6,650 | 77.5 | **0.348** | 25,856 |
+
+Findings: the hurdle model posts the project's best RMSE/R², but the
+single log-objective XGB still wins every relative-error metric (MAE −8%,
+MAPE −22% vs hurdle) — the two-part structure trades tail accuracy for
+slightly worse typical-claim fit. The GAM's splines beat the linear GLM by
+a wide margin (RMSE 23.4k vs 33.8k) yet still lose to gradient boosting on
+MAE; the year random effect contributes exactly nothing (years have
+thousands of claims each, so the RE variance collapses — GAM ≡ GAMM to 6
+decimals). The Gamma GLM diverges even winsorized — the classic actuarial
+specification needs a tighter feature treatment than this pipeline gives
+it. No family moves the needle on the expensive-claims quintile (~25k MAE
+everywhere): with `InitialIncurredCalimsCost` dominating and the tail
+intrinsically volatile, that segment stays open.
+
 ## Files and reproduce
 
 - `analysis.Rmd` — source (R, tidymodels); `analysis.html` — rendered report
