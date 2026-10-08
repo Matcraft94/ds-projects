@@ -129,7 +129,32 @@ best on RMSE/R²; (3) Q1–Q4 quintile MAE drops further (Q1 457→128) and
 even Q5 edges down (25,394→24,603) — but Part A shows ~25k MAE in the
 expensive segment sits near the information ceiling of this dataset.
 
-## Files and reproduce
+## Final squeeze round (2026-10-07, `final_squeeze_experiment.R`)
+
+On the FE2 feature set: OOF target encoding (5-fold), median objective
+(quantile 0.5 in log space), monotone constraints on `log_initial`/
+`init_pct_te`, tuned grid (eta×depth, internal validation), and a 4-arm
+ensemble.
+
+| Arm | RMSE | MAE | MAPE | R² | R²log |
+|---|---|---|---|---|---|
+| A1 FE2 reference | 22,862 | 5,660 | 33.9 | 0.344 | 0.862 |
+| A2 OOF-TE | 22,829 | 5,650 | 34.1 | 0.346 | 0.862 |
+| **A3 median objective** | 23,329 | **5,313** | **26.6** | 0.317 | 0.859 |
+| A4 monotone | 22,805 | 5,658 | 33.8 | 0.348 | 0.862 |
+| A5 tuned (eta .02, d3) | **22,740** | 5,574 | 33.0 | **0.351** | 0.864 |
+| **A6 ensemble (A2–A5)** | 22,846 | 5,494 | 31.3 | 0.345 | 0.864 |
+
+Verdict: the **median objective** is the best single model for what the
+business cares about (MAE 5,313 −27% vs published, MAPE 26.6 −56%, and the
+best expensive-quintile MAE of the whole effort, 24,004); the **tuned
+squared-loss arm** is best on RMSE/R²; the ensemble lands in between on
+everything. The interaction ceiling estimate (Initial×stem-TE grouping) is
+R²log 0.835 — every model sits at 0.858–0.864, **above the grouping-based
+ceiling** (trees exploit interactions the grouping cannot see), i.e. the
+remaining gap to a grouped "perfect" model is already negative; further
+gains must come from information not in these features. Cumulative from the
+published original: **MAE −27%, MAPE −56%**, Q5 MAE −7% (25,856→24,004).
 
 - `analysis.Rmd` — source (R, tidymodels); `analysis.html` — rendered report
   with all tables and plots (the verified-numbers source of record).
