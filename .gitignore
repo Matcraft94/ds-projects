@@ -178,3 +178,7 @@ lightning_logs/
 
 # actuarial competition data (Kaggle, not distributed)
 actuarial-loss-prediction/Data/
+
+# targets pipeline cache
+actuarial-loss-prediction/_targets/
+# run artifacts (predictions etc, metrics csv ARE tracked)
