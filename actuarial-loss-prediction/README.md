@@ -31,6 +31,11 @@ Full narrative with caveats and the importance chart:
   imputation, both computed on combined data — test metrics mildly optimistic.
 - Missing ultimate costs were filled with group means (biases target downward).
 - The reported R² is squared correlation, not the coefficient of determination.
+- **Environment-bound numbers:** a 2026-10-07 re-run (data re-downloaded from
+  a public mirror, seeds unchanged) reproduces the pipeline end-to-end but
+  not the exact figures (RMSE 29,032/26,355 vs 22,217/25,034; gain 0.838 vs
+  0.879) — the published numbers belong to the original 2025 environment,
+  preserved in the rendered `analysis.html`.
 
 ## Files and reproduce
 
@@ -42,3 +47,17 @@ Full narrative with caveats and the importance chart:
   Expected shape: ~54,000 rows; key columns include `ClaimNumber`,
   `DateTimeOfAccident`, `ClaimDescription`, `InitialIncurredCalimsCost`,
   `UltimateIncurredClaimCost` (target).
+
+## Reproducibility note (2026-10-07 re-run)
+
+The original CSV was lost, so the data was re-downloaded from a public
+mirror of the competition (`github.com/riwajpokhrel/Actuarial_loss_prediction`)
+— 54,000 rows, header identical including the upstream `CalimsCost` typo.
+The pipeline then runs end-to-end (R 4.6.1, current tidymodels/xgboost,
+containerized), but the metrics **shift across environments**: train/test
+RMSE 29,031.85/26,354.52 and gain importance 0.838 (vs the original
+22,216.72/25,033.93 and 0.879), despite identical seeds (123/345) —
+package-version drift and/or row ordering in the mirror. Conclusion: the
+numbers above are **environment-bound to the original 2025 run** whose
+rendered output (`analysis.html`) remains the source of record; the re-run
+output (`analysis_verify.html`, untracked) documents this check.
