@@ -95,6 +95,40 @@ it. No family moves the needle on the expensive-claims quintile (~25k MAE
 everywhere): with `InitialIncurredCalimsCost` dominating and the tail
 intrinsically volatile, that segment stays open.
 
+## Distribution study + targeted features (2026-10-07, `distribution_features_experiment.R`)
+
+**Part A — where the error lives.** By Initial-cost decile (train): the
+median Ultimate/Initial ratio swings 0.81–1.52, the *blow-up rate*
+(ultimate > 3× initial) is **24% in the cheapest decile vs 6–7% in the
+top**, and the within-decile SD of log-cost stays ≈0.75 everywhere.
+Decomposing variance: **Initial alone explains 74.4% (deciles) / 76.3%
+(percentiles) of the log-cost variance** — the within-percentile residual
+SD is 0.742 in log space (total 1.524). Half the variance is
+irreducible given the information available: the expensive-claims error
+floor is structural, not a modeling failure.
+
+**Part B — features aimed at that structure:** target-encoded stems and
+bigrams (the original analysis computed per-term severity but never used
+it as a feature; smoothed K=50, train-only), Initial-percentile target
+encoding (the full nonlinear Initial→cost curve), `log_initial`,
+zero-Initial flag, `log_initial×log(delay)` interaction, description
+word count.
+
+| Arm | RMSE | MAE | MAPE | R² | RMSLE |
+|---|---|---|---|---|---|
+| REF (TF-IDF, prior best config) | 23,851 | 6,094 | 60.1 | 0.286 | 0.724 |
+| FE1 TF-IDF + new | 23,169 | 6,124 | 48.6 | 0.327 | 0.632 |
+| **FE2 new only (no TF-IDF)** | 22,816 | **5,658** | **33.6** | 0.347 | **0.563** |
+| FE3 hurdle + all | **22,540** | 6,612 | 59.7 | **0.363** | 0.649 |
+
+Findings: (1) **two target-encoded text columns replace 300 TF-IDF
+columns and beat them** — FE2 wins every relative-error metric (MAPE
+−44%, RMSLE −22% vs REF; MAE −22% vs the published original) with a
+smaller, more interpretable feature set; (2) the hurdle variant is again
+best on RMSE/R²; (3) Q1–Q4 quintile MAE drops further (Q1 457→128) and
+even Q5 edges down (25,394→24,603) — but Part A shows ~25k MAE in the
+expensive segment sits near the information ceiling of this dataset.
+
 ## Files and reproduce
 
 - `analysis.Rmd` — source (R, tidymodels); `analysis.html` — rendered report
